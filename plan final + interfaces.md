@@ -52,6 +52,16 @@ Este documento consolida todas las decisiones del proyecto, estableciendo un pla
 Se presentan los modelos de datos utilizando la sintaxis de Prisma. Este diseño mejora la integridad referencial mediante el uso de enums y establece relaciones explícitas entre las entidades clave.
 
 ```prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
 // Tablas de Usuarios y Clientes
 model Usuario {
   id        String   @id @default(uuid()) // Corresponde al ID de Supabase Auth
@@ -227,7 +237,7 @@ model LogEvento {
   ticket    Ticket?   @relation(fields: [ticketId], references: [id])
 }
 
-view AgregadoDiarioTicket {
+view AgregadoDiarioTicket { //Prisma no permite la creación de vistas, hay que crearla manualmente pero igual te dejo el esquema
   id                    String   @id @default(uuid())
   fecha                 DateTime @unique
   // Métricas de volumen
@@ -326,33 +336,33 @@ Este flujo optimiza el tiempo de respuesta y la eficiencia del equipo de soporte
 #### 4.2. Fase 2: Procesamiento y Enriquecimiento con IA (100% Automático)
 Una vez creado el ticket, se encola un job para ser procesado por el **Motor de Inteligencia Artificial**, compuesto por varios agentes especializados.
 1.  **Análisis Inicial:**
-    *   **Agente de Análisis:** Lee el mensaje inicial para identificar la intención, el sentimiento, las palabras clave y la posible urgencia.
+    *   **Agente de Análisis:** Lee el mensaje inicial del cliente para identificar la intención, el sentimiento, las palabras clave y la posible urgencia.
     *   **Agente de Categorización:** Asigna una categoría preliminar al ticket (ej. `etiqueta` "WISMO", "RETURN").
 2.  **Generación de Solución:**
     *   **Agente de Conocimiento:** Basado en la categoría, busca en la `BaseConocimiento` y la información de la `Orden` (si está vinculada) para formular una respuesta sugerida.
     *   **Agente de Confianza:** Evalúa la respuesta sugerida y le asigna un nivel de confiabilidad (ej. 95%).
 3.  **Consolidación y Actualización del Ticket:**
-    *   **Agente Orquestador:** Recopila la información de los agentes anteriores y actualiza el registro del `ticket` con la propuesta de respuesta y sus metadatos (`respuestaSugeridaIA`, `confianzaIA`, `metaDatosIA`).
+    *   **Agente Orquestador:** Recopila la información de los agentes anteriores y actualiza el **registro del `Mensaje` original del cliente** con la propuesta de respuesta y sus metadatos (`respuestaSugeridaIA`, `confianzaIA`, `metaDatosIA`), creando un historial de auditoría claro.
     *   Finalmente, actualiza el estado del ticket a `ia_sugerido` y notifica al frontend para que aparezca en la cola de triaje.
 
 #### 4.3. Fase 3: Triaje y Validación Humana (Nivel 1)
 Aquí interviene una persona (ej. Brenda) para garantizar la calidad antes de que la respuesta llegue al cliente.
 1.  **Cola de Triaje:** El agente de Nivel 1 ve una cola de tickets en estado `ia_sugerido`.
 2.  **Punto de Decisión Rápida:** Al seleccionar un ticket, el agente tiene tres opciones principales:
-    *   **Aprobar y Enviar:** Si la respuesta sugerida en `respuestaSugeridaIA` es correcta, la aprueba con un solo clic. El sistema crea un nuevo `mensaje` de salida, guarda el ID del agente en `aprobadoPorUsuarioId` y cambia el estado del ticket a `esperando_cliente` o `cerrado`.
+    *   **Aprobar y Enviar:** Si la respuesta sugerida por la IA (asociada al último mensaje del cliente) es correcta, la aprueba con un solo clic. El sistema crea un nuevo `mensaje` de salida, guarda el ID del agente en `aprobadoPorUsuarioId` y cambia el estado del ticket a `esperando_cliente` o `cerrado`.
     *   **Escalar a Cola General:** Si la respuesta es incorrecta o el caso es complejo, el agente escala el ticket. Esto cambia el estado del ticket a `escalado_nivel_2`, enviándolo a la cola de especialistas de Nivel 2.
     *   **Reasignar a Agente Específico:** Si el agente de triaje sabe quién es la persona ideal para resolver el caso, puede asignarlo directamente a un agente específico de Nivel 2, registrando la asignación en el historial del ticket.
 
 #### 4.4. Fase 4: Resolución por Especialistas (Nivel 2)
 Los tickets en estado `escalado_nivel_2` llegan al personal especializado (ej. Carlos).
-1.  **Asignación de Tickets:** La asignación puede ser por especialidad o carga de trabajo. Cuando un especialista toma un ticket, su estado puede cambiar a `en_progreso_nivel_2`.
+1.  **Asignación de Tickets:** La asignación puede ser por especialidad o carga de trabajo. Cuando un especialista toma un ticket (acción de "Reclamar" o "Tomar"), su estado cambia a `en_progreso_nivel_2` para indicar que está siendo trabajado activamente.
 2.  **Resolución:** El especialista de Nivel 2 trabaja en el ticket utilizando herramientas más avanzadas y su conocimiento experto para resolver el problema del cliente, enviando una respuesta manual.
 
 #### 4.5. Estrategia de Integración con Órdenes
 Para que el agente pueda responder preguntas de tipo WISMO, necesita acceso a la información de los pedidos. Se implementarán las siguientes opciones en orden de prioridad:
 *   **MVP Rápido (Importación CSV):**
     *   **UI/UX:** Se implementará una interfaz que permita subir un archivo CSV, previsualizar el mapeo de columnas (ej. `columna X` → `campo Y`), validar los datos mostrando errores por fila y finalmente iniciar la importación. Al finalizar, se mostrará un reporte con `registros_importados`, `registros_omitidos` y un enlace para descargar un `errores.csv`.
-    *   **Backend:** La importación se procesará en segundo plano. El endpoint recibirá el archivo y encolará un job que procesará los registros en lotes (chunks de 100-1000) para evitar problemas de memoria. Se realizarán validaciones de schema, de duplicados (por un identificador único de orden) y se usará un `importId` para garantizar la idempotencia en caso de reintentos.
+    *   **Backend:** Se adoptará una política de **"procesamiento por fila con tolerancia a fallos"**. El job de importación procesará cada fila de forma independiente; si una fila falla la validación o inserción, se registrará el error para el reporte final sin detener la importación del resto de filas válidas.
 *   **Mejorado (Post-MVP):** Un conector vía API a plataformas como Shopify o Magento (usando OAuth o una API Key) que pueble y actualice la tabla `ordenes` automáticamente.
 *   **Futuro (Post-MVP):** Implementación de webhooks desde la plataforma de e-commerce para recibir actualizaciones en tiempo real sobre el estado de los pedidos y el tracking.
 
@@ -394,7 +404,7 @@ La interfaz de usuario está diseñada para que Brenda y Carlos puedan procesar 
 1.  **Cola de Tickets:** La vista principal mostrará la lista de tickets en estado `ia_sugerido`. Cada ítem destacará la categoría, urgencia y nivel de confianza (`confianzaIA`) sugeridos por la IA.
 2.  **Panel de Decisión:** Al abrir un ticket, se presenta una vista dividida:
     *   **Izquierda:** Historial de la conversación y archivos adjuntos.
-    *   **Derecha:** La propuesta completa de la IA (`respuestaSugeridaIA`, etiquetas modificables, confianza) y, si aplica, la información de la orden vinculada y un acceso rápido al historial del cliente.
+    *   **Derecha:** La propuesta completa de la IA (obtenida del `Mensaje` más reciente: `respuestaSugeridaIA`, etiquetas modificables, confianza) y, si aplica, la información de la orden vinculada y un acceso rápido al historial del cliente.
 3.  **Acciones Rápidas:**
     *   **Aprobar y Enviar (1-clic):** Envía la respuesta y actualiza el estado del ticket.
     *   **Editar y Enviar:** Permite modificar la respuesta antes de enviarla.
@@ -412,6 +422,7 @@ Para asegurar que se atiendan tanto los tickets urgentes como los de menor prior
 2.  **Repetición del Ciclo:** Una vez completado, el ciclo vuelve a empezar.
 3.  **Manejo de Colas Vacías:** Si una categoría no tiene suficientes tickets, el sistema procesa los que hay y pasa inmediatamente a la siguiente categoría.
 4.  **Manejo de Nuevos Tickets Urgentes:** Si un nuevo ticket "Urgente" llega mientras un agente está trabajando, no se interrumpe el trabajo actual. El nuevo ticket será atendido en el siguiente ciclo.
+5.  **Soporte de API:** Esta lógica será encapsulada en un endpoint de API dedicado (`GET /tickets/next-in-flow`) para simplificar el frontend.
 
 ### 6. Criterios de Aceptación y Casos de Prueba del MVP
 #### 6.1. Reglas Operacionales de Aceptación
@@ -539,7 +550,7 @@ Para el MVP, se ha decidido implementar **Paneles Fijos por Rol (Role-Based Dash
         *   **Izquierda (Contexto):** Historial completo de la conversación, archivos adjuntos visibles y un panel con la información clave de la `Orden` vinculada (estado, tracking, artículos).
         *   **Derecha (Acción):**
             *   **Banner de Sugerencia de Fusión:** Si `sugerenciaFusionId` existe, mostrar una alerta prominente con acciones para fusionar o ignorar.
-            *   **Editor de Texto:** Pre-cargado con el contenido de `respuestaSugeridaIA`.
+            *   **Editor de Texto:** Pre-cargado con el contenido de `respuestaSugeridaIA` (del último mensaje del cliente).
             *   **Panel de Metadatos de IA:** Muestra `confianzaIA`, `metaDatosIA` (el "porqué" de la IA) y las etiquetas sugeridas.
             *   **Botones de Acción Rápida:**
                 *   `[✅ Aprobar y Enviar]`
@@ -733,6 +744,12 @@ Estos endpoints están diseñados para la eficiencia, proporcionando datos pre-a
     }
     ```
 
+#### API-02.1: Siguiente Ticket para "Flujo Continuo" (Ref: UI-04)
+*   **Endpoint:** `GET /tickets/next-in-flow`
+*   **Rol Requerido:** `AGENTE`
+*   **Propósito:** Encapsula la lógica de la cola de "Flujo Continuo" (4 Urgentes, 3 Altas, etc.) en el servidor, devolviendo el siguiente ticket más apropiado para el agente que realiza la llamada.
+*   **Respuesta Exitosa (200 OK):** El objeto completo del ticket o `204 No Content` si no hay tickets en la cola.
+
 ### B. Endpoints del Flujo de Tickets
 
 Estos son los endpoints operativos que los agentes usarán constantemente a través de las UIs de gestión de tickets.
@@ -752,18 +769,21 @@ Estos son los endpoints operativos que los agentes usarán constantemente a trav
     *   **Endpoints de Acción:**
         *   `POST /tickets/:id/actions/approve`: **Aprobar y Enviar (Ref: UI-03).**
             *   **Payload:** `{ "editedBody": "Texto opcionalmente modificado por el agente." }`
-            *   **Lógica:** Si `editedBody` no está presente, usa `respuestaSugeridaIA`. Envía el correo. Actualiza el estado del ticket.
+            *   **Lógica:** Si `editedBody` es `undefined`, se usa la `respuestaSugeridaIA` del mensaje y el mensaje saliente se marca como `esAutomatico = true`. Si `editedBody` es una `string` (incluida `""`), se usa su valor y se marca como `esAutomatico = false`. El backend debe validar que el cuerpo no esté vacío antes de enviar.
         *   `POST /tickets/:id/actions/escalate`: **Escalar a Nivel 2 (Ref: UI-03).**
             *   **Payload:** `{ "internalNote": "La IA no entendió el problema real del cliente." }`
         *   `POST /tickets/:id/actions/reassign`: **Reasignar (Ref: UI-03).**
             *   **Payload:** `{ "assigneeId": "uuid-carlos", "internalNote": "Carlos es el experto en este producto." }`
+        *   `POST /tickets/:id/actions/claim`: **Tomar Ticket (Nivel 2).**
+            *   **Payload:** `{}`
+            *   **Lógica:** Cambia el estado del ticket de `escalado_nivel_2` a `en_progreso_nivel_2` y se lo asigna al agente que realiza la llamada.
         *   `POST /tickets/:targetTicketId/actions/merge`: **Fusionar Ticket.**
             *   **Payload:** `{ "sourceTicketId": "uuid-del-ticket-a-fusionar" }`
         *   `POST /tickets/:id/actions/dismiss-merge`: **Ignorar Sugerencia de Fusión.**
             *   **Payload:** `{}`
 *   **Crear un Mensaje (Responder):** `POST /tickets/:id/messages`
     *   **Propósito:** Para que un agente de Nivel 2 envíe una respuesta manual.
-    *   **Payload:** `{ "body": "Texto de la respuesta.", "isInternalNote": false, "attachments": ["uuid-archivo1"] }`
+    *   **Payload:** `{ "body": "Texto de la respuesta.", "isInternalNote": false, "attachmentIds": ["uuid-archivo1"] }`
 
 ### C. Endpoints de Gestión y Configuración
 
@@ -820,7 +840,16 @@ Endpoints que no requieren autenticación.
 #### API-10: Creación de Ticket desde Formulario Web (Ref: UI-12)
 *   **Endpoint:** `POST /public/tickets`
 *   **Autenticación:** Ninguna (pero con limitación de tasa - rate limiting).
-*   **Payload:** `{ "name": "...", "email": "...", "orderId": "...", "subject": "...", "message": "...", "attachments": [...] }`
+*   **Payload:** `{ "name": "...", "email": "...", "orderId": "...", "subject": "...", "message": "...", "attachmentIds": ["uuid-archivo1"] }`
+
+### F. Endpoints de Utilidades
+
+#### API-11: Subida de Archivos
+*   **Endpoint:** `POST /uploads`
+*   **Autenticación:** Requerida (`AGENTE` o `ADMINISTRADOR`). Para el formulario público, se necesitará un endpoint `POST /public/uploads` con una política de seguridad más estricta.
+*   **Tipo de Contenido:** `multipart/form-data`
+*   **Propósito:** Maneja la subida de un único archivo a Supabase Storage.
+*   **Respuesta Exitosa (201 Created):** `{ "fileId": "uuid-del-archivo-generado" }`. Este ID se usa luego en los payloads de creación de tickets o mensajes (`attachmentIds`).
 
 ---
 
@@ -844,7 +873,8 @@ Estas interfaces definen cómo nuestro sistema se comunica con servicios externo
         *   `attachment-count`: Número de adjuntos.
         *   `attachment-x`: Archivos adjuntos (donde x es un número).
         *   `In-Reply-To`, `References`: Cabeceras clave para identificar si es una respuesta a un hilo existente.
-*   **Lógica Crítica:** El handler de este webhook es el punto de partida del 80% de los tickets. Su robustez es fundamental. Debe identificar hilos, parsear adjuntos y crear/actualizar entidades en la base de datos de forma transaccional.
+        *   `Message-ID`: Identificador único del mensaje, provisto por el servidor de correo.
+*   **Lógica Crítica:** Para garantizar la idempotencia y evitar la creación de mensajes duplicados por reintentos del webhook, el handler extraerá la cabecera `Message-ID` única de Mailgun y la guardará en el campo `fuenteMessageId` del nuevo registro de `Mensaje`. Una violación de la restricción de unicidad en la base de datos indicará que el mensaje ya fue procesado, permitiendo al sistema ignorar el duplicado de forma segura.
 
 #### COM-02: Emails Transaccionales Salientes (Ref: UI-13)
 *   **Tipo:** Salida (Outbound).
@@ -907,18 +937,23 @@ Este es el corazón lógico del sistema. Cada transición está gatillada por un
 
 *   **`nuevo`** → **(Acción del Sistema: Worker IA)** → **`ia_sugerido`**
     *   **Descripción:** La IA ha analizado el ticket y generado una sugerencia.
-    *   **Lógica:** El worker de IA puebla los campos `respuestaSugeridaIA`, `confianzaIA`, etc.
+    *   **Lógica:** El worker de IA puebla los campos `respuestaSugeridaIA`, etc. en el `Mensaje` original.
     *   **Siguiente Paso:** Aparece en la cola principal de "Triaje" para los agentes de Nivel 1.
 
 *   **`ia_sugerido`** → **(Acción del Agente: Envía respuesta)** → **`esperando_cliente`**
     *   **Descripción:** Se ha dado una respuesta y ahora la pelota está en el tejado del cliente.
-    *   **Lógica:** El agente aprueba, edita o escribe una respuesta. Se crea un `Mensaje` saliente. Los campos de la IA (`respuestaSugeridaIA`, etc.) se limpian (a `NULL`).
+    *   **Lógica:** El agente aprueba, edita o escribe una respuesta. Se crea un `Mensaje` saliente.
     *   **Siguiente Paso:** El ticket sale de las colas activas. Se inicia un temporizador de inactividad (ej. 72 horas).
 
 *   **`ia_sugerido`** → **(Acción del Agente: Escala)** → **`escalado_nivel_2`**
     *   **Descripción:** El agente de Nivel 1 determina que la sugerencia de la IA es incorrecta o el caso es demasiado complejo.
-    *   **Lógica:** El agente hace clic en "Escalar". El estado del ticket cambia. Los campos de la IA se limpian.
+    *   **Lógica:** El agente hace clic en "Escalar". El estado del ticket cambia.
     *   **Siguiente Paso:** El ticket aparece en la cola de Nivel 2 (UI-04) para ser tomado por un especialista.
+
+*   **`escalado_nivel_2`** → **(Acción del Agente N2: Toma el ticket)** → **`en_progreso_nivel_2`**
+    *   **Descripción:** Un especialista ha reclamado el ticket y lo está trabajando activamente.
+    *   **Lógica:** El agente de Nivel 2 usa la acción "Tomar Ticket". El ticket se le asigna.
+    *   **Siguiente Paso:** El ticket permanece en este estado hasta que el especialista envíe una respuesta.
 
 *   **`esperando_cliente`** → **(Evento: Cliente responde)** → **`respuesta_cliente`**
     *   **Descripción:** El cliente ha continuado la conversación.
@@ -927,7 +962,7 @@ Este es el corazón lógico del sistema. Cada transición está gatillada por un
 
 *   **`esperando_cliente`** → **(Acción del Sistema: Inactividad)** → **`cerrado`**
     *   **Descripción:** El problema se considera resuelto por silencio del cliente.
-    *   **Lógica:** Un cron job periódico busca tickets en `esperando_cliente` cuya `modificadoEn` sea mayor al umbral (ej. 72h).
+    *   **Lógica:** Un cron job periódico busca tickets en `esperando_cliente` cuya `modificadoEn` sea mayor al umbral (ej. 72h). Para evitar condiciones de carrera (race conditions), esta transición debe ser atómica, usando una consulta condicional (ej. `UPDATE Ticket SET estado = 'cerrado' WHERE id = ? AND estado = 'esperando_cliente'`).
     *   **Siguiente Paso:** El ticket se archiva.
 
 *   **`cerrado`** → **(Evento: Cliente responde - "Ticket Zombie")** → **`reabierto`**
@@ -983,7 +1018,7 @@ Este escenario práctico demuestra la resiliencia del sistema frente a un compor
 **Escenario:** Un cliente continúa una conversación creando un nuevo correo en lugar de responder al hilo existente.
 
 1.  **Lunes, 10:00 AM:** Un cliente (`id: cli_abc`) envía un email con el asunto "Mi app no funciona". El sistema crea el **Ticket #123** con estado `nuevo`.
-2.  **10:01 AM:** El worker de IA procesa el ticket, que pasa a estado `ia_sugerido`.
+2.  **10:01 AM:** El worker de IA procesa el ticket, que pasa a estado `ia_sugerido`. La sugerencia de la IA se guarda en el primer mensaje del ticket.
 3.  **10:05 AM:** La Agente Ana (Nivel 1) revisa la sugerencia, la edita y envía una respuesta solicitando más detalles. El ticket transita a estado `esperando_cliente`.
 4.  **Jueves, 11:00 AM:** Transcurren más de 72 horas sin respuesta del cliente. Un cron job periódico detecta la inactividad y cambia automáticamente el estado del **Ticket #123** a `cerrado`.
 5.  **Viernes, 9:00 AM:** El cliente, en lugar de responder al correo original, crea un **nuevo email** con el asunto "Sigue sin funcionar!!".
