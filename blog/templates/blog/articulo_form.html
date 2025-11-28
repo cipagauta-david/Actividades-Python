@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>{{ modo }} artículo</title>
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; margin: 2rem; max-width: 720px; }
+    label { display: block; margin-top: 1rem; font-weight: 600; }
+    input[type="text"], textarea, select { width: 100%; padding: .5rem; }
+    .row { margin-bottom: .75rem; }
+    .actions { margin-top: 1rem; }
+    a { text-decoration: none; color: #0b57d0; }
+  </style>
+</head>
+<body>
+  <p><a href="{% url 'lista_articulos' %}">← Volver</a></p>
+  <h1>{{ modo }} artículo</h1>
+
+  <form method="post">
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+
+    <div class="row">
+      <label for="id_titulo">Título</label>
+      {{ form.titulo.errors }}
+      {{ form.titulo }}
+    </div>
+
+    <div class="row">
+      <label for="id_contenido">Contenido</label>
+      {{ form.contenido.errors }}
+      {{ form.contenido }}
+    </div>
+
+    <div class="row">
+      <label for="id_esta_publicado">¿Publicado?</label>
+      {{ form.esta_publicado.errors }}
+      {{ form.esta_publicado }}
+    </div>
+
+    <div class="row">
+      <label for="id_autor">Autor</label>
+      {{ form.autor.errors }}
+      {{ form.autor }}
+    </div>
+
+    <div class="row">
+      <label for="id_etiquetas">Etiquetas</label>
+      {{ form.etiquetas.errors }}
+      {{ form.etiquetas }}
+    </div>
+
+    <div class="actions">
+      <button type="submit">Guardar</button>
+    </div>
+  </form>
+
+</body>
+</html>

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Artículos</title>
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; margin: 2rem; }
+    a { text-decoration: none; color: #0b57d0; }
+    .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+    .card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin-bottom: .75rem; }
+    .tags { color: #555; font-size: .9rem; }
+  </style>
+  </head>
+<body>
+  <div class="top">
+    <h1>Artículos</h1>
+    <a href="{% url 'crear_articulo' %}">+ Nuevo artículo</a>
+  </div>
+
+  {% if articulos %}
+    {% for art in articulos %}
+      <div class="card">
+        <h3>
+          <a href="{% url 'detalle_articulo' art.pk %}">{{ art.titulo }}</a>
+        </h3>
+        <div class="meta">
+          Por {{ art.autor.nombre }} • {{ art.fecha_publicacion|date:"Y-m-d H:i" }}
+        </div>
+        {% if art.etiquetas.all %}
+          <div class="tags">
+            Etiquetas:
+            {% for tag in art.etiquetas.all %}
+              <span>#{{ tag.nombre }}</span>{% if not forloop.last %}, {% endif %}
+            {% empty %}
+              <span>Sin etiquetas</span>
+            {% endfor %}
+          </div>
+        {% endif %}
+      </div>
+    {% endfor %}
+  {% else %}
+    <p>No hay artículos.</p>
+  {% endif %}
+
+</body>
+</html>
