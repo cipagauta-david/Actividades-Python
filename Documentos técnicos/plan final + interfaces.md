@@ -1,5 +1,3 @@
-Saludos, soy Arquitecto y este es tu plan final:
-
 ## Plan de Acción Final: Asistente de Soporte al Cliente Inteligente (NoraAI) para GearUp Gadgets
 
 Este documento consolida todas las decisiones del proyecto, estableciendo un plan de acción definitivo para un MVP (Producto Mínimo Viable) single-tenant, enfocado en funcionalidad, uso de herramientas gratuitas y entrega en un plazo académico de dos meses para un equipo de tres personas.
@@ -52,10 +50,10 @@ Este documento consolida todas las decisiones del proyecto, estableciendo un pla
 Se presentan los modelos de datos utilizando la sintaxis de Prisma. Este diseño mejora la integridad referencial mediante el uso de enums y establece relaciones explícitas entre las entidades clave.
 
 ```prisma
-
 generator client {
-  provider = "prisma-client-js"
-}
+    provider = "prisma-client-js"
+    previewFeatures = ["views"]
+    }
 
 datasource db {
   provider = "postgresql"
@@ -64,71 +62,72 @@ datasource db {
 
 // Tablas de Usuarios y Clientes
 model Usuario {
-  id        String   @id @default(uuid()) // Corresponde al ID de Supabase Auth
-  nombre    String
-  correo    String   @unique
-  rol       Rol      @default(AGENTE)
-  creadoEn  DateTime @default(now())
-  modificadoEn  DateTime @default(now())
-  tickets   Ticket[] @relation("asignado")
+  id           String   @id @default(uuid())
+  nombre       String
+  correo       String   @unique
+  rol          Rol      @default(AGENTE)
+  activo       Boolean  @default(true) // <--- NUEVO CAMPO
+  creadoEn     DateTime @default(now())
+  modificadoEn DateTime @default(now())
+  tickets      Ticket[] @relation("asignado")
 }
 
 model Cliente {
-  id        String   @id @default(uuid())
-  nombre    String?
-  correo    String   @unique // Usando el identificador de pais +57 para Colombia
-  telefono  String?
-  creadoEn  DateTime @default(now())
-  modificadoEn  DateTime @default(now())
-  ordenes   Orden[]
-  tickets   Ticket[]
+  id           String   @id @default(uuid())
+  nombre       String?
+  correo       String   @unique // Usando el identificador de pais +57 para Colombia
+  telefono     String?
+  creadoEn     DateTime @default(now())
+  modificadoEn DateTime @default(now())
+  ordenes      Orden[]
+  tickets      Ticket[]
 }
 
 // Tablas de E-commerce y Soporte
 model Orden {
-  id                    String       @id @default(uuid())
+  id                    String      @id @default(uuid())
   clienteId             String
-  estado                EstadoOrden  @default(pendiente)
+  estado                EstadoOrden @default(pendiente)
   numeroSeguimiento     String?
   transportista         String?
   articulos             Json // NOTA: Se mantiene Json por flexibilidad, pero considerar un modelo ItemOrden
   ultimaActualizacionEn DateTime?
-  creadoEn              DateTime     @default(now())
-  modificadoEn          DateTime     @default(now())
+  creadoEn              DateTime    @default(now())
+  modificadoEn          DateTime    @default(now())
   tickets               Ticket[]
-  cliente               Cliente      @relation(fields: [clienteId], references: [id])
+  cliente               Cliente     @relation(fields: [clienteId], references: [id])
 
   @@index([clienteId])
   @@index([creadoEn])
 }
 
 model Ticket {
-  id                 String        @id @default(uuid())
-  clienteId          String
-  assigneeId         String? // ID del usuario asignado
+  id                  String       @id @default(uuid())
+  clienteId           String
+  assigneeId          String? // ID del usuario asignado
   historialAsignacion String? //Json que guarda el historial de asignaciones
-  asunto             String?
-  estado             EstadoTicket  @default(nuevo)
-  prioridad          Prioridad?
-  canalOrigen        Canal
-  creadoEn           DateTime      @default(now())
-  modificadoEn       DateTime      @default(now())
-  resueltoEn         DateTime?
-  requiereEscalado   Boolean       @default(false)
-  sugerenciaFusionId String? // Guarda el ID del ticket con el que se sugiere la fusión.
+  asunto              String?
+  estado              EstadoTicket @default(nuevo)
+  prioridad           Prioridad?
+  canalOrigen         Canal
+  creadoEn            DateTime     @default(now())
+  modificadoEn        DateTime     @default(now())
+  resueltoEn          DateTime?
+  requiereEscalado    Boolean      @default(false)
+  sugerenciaFusionId  String? // Guarda el ID del ticket con el que se sugiere la fusión.
 
-  etiquetas          Etiqueta[] // Relación muchos-a-muchos con Etiqueta
-  ordenId            String?
-  mensajes           Mensaje[]
-  archivos           Archivo[]
-  eventos            LogEvento[]
-  orden              Orden?        @relation(fields: [ordenId], references: [id])
-  usuarioAsignado    Usuario?      @relation("asignado", fields: [assigneeId], references: [id])
-  cliente            Cliente       @relation(fields: [clienteId], references: [id])
+  etiquetas       Etiqueta[] // Relación muchos-a-muchos con Etiqueta
+  ordenId         String?
+  mensajes        Mensaje[]
+  archivos        Archivo[]
+  eventos         LogEvento[]
+  orden           Orden?      @relation(fields: [ordenId], references: [id])
+  usuarioAsignado Usuario?    @relation("asignado", fields: [assigneeId], references: [id])
+  cliente         Cliente     @relation(fields: [clienteId], references: [id])
 
   // Relación opcional para la sugerencia (self-relation)
-  sugerenciaFusion      Ticket?  @relation("SugerenciaDeFusion", fields: [sugerenciaFusionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  sugeridoParaFusionEn  Ticket[] @relation("SugerenciaDeFusion")
+  sugerenciaFusion     Ticket?  @relation("SugerenciaDeFusion", fields: [sugerenciaFusionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  sugeridoParaFusionEn Ticket[] @relation("SugerenciaDeFusion")
 
   @@index([clienteId])
   @@index([estado])
@@ -144,135 +143,138 @@ model Etiqueta {
 }
 
 model Mensaje {
-  id                   String   @id @default(uuid())
+  id                   String    @id @default(uuid())
   ticketId             String
   usuarioId            String? // null => cliente o sistema
   contenidoTexto       String
-  esNotaInterna        Boolean  @default(false)
-  esAutomatico         Boolean  @default(false)
+  esNotaInterna        Boolean   @default(false)
+  esAutomatico         Boolean   @default(false)
   canal                Canal
   metaDatosEnvio       Json?
   enviadoEn            DateTime?
-  creadoEn             DateTime @default(now())
-  modificadoEn         DateTime @default(now())
+  creadoEn             DateTime  @default(now())
+  modificadoEn         DateTime  @default(now())
   aprobadoPorUsuarioId String? // Guarda el ID del usuario de Nivel 1 que aprobó la sugerencia de la IA.
-  
+
   // ID único del mensaje del proveedor (ej. Mailgun Message-ID) para garantizar la idempotencia del webhook.
-  fuenteMessageId      String?  @unique
-  
+  fuenteMessageId String? @unique
+
   // Sugerencia de la IA para ESTE mensaje específico
-  respuestaSugeridaIA  String?  @db.Text
-  confianzaIA          Float?
+  respuestaSugeridaIA String? @db.Text
+  confianzaIA         Float?
   // Guarda un JSON con el razonamiento o los datos que usó la IA para la trazabilidad.
   // Ej: {"agente_conocimiento_id": "xyz", "articulos_usados": [1, 5]}
-  metaDatosIA          Json?
+  metaDatosIA         Json?
 
-  ticket               Ticket   @relation(fields: [ticketId], references: [id])
+  ticket Ticket @relation(fields: [ticketId], references: [id])
 }
 
 model Archivo {
-  id                 String   @id @default(uuid())
-  ticketId           String
-  mensajeId          String?
-  nombreArchivo      String
-  urlAlmacenamiento  String
-  tipoMime           String // Tipo MIME del archivo (ej: image/jpeg, application/pdf)
-  tamano             Int // Tamaño en KB -- en caso de ser decimal redondear hacia arriba
-  creadoEn           DateTime @default(now())
-  modificadoEn       DateTime @default(now())
+  id                String   @id @default(uuid())
+  ticketId          String
+  mensajeId         String?
+  nombreArchivo     String
+  urlAlmacenamiento String
+  tipoMime          String // Tipo MIME del archivo (ej: image/jpeg, application/pdf)
+  tamano            Int // Tamaño en KB -- en caso de ser decimal redondear hacia arriba
+  creadoEn          DateTime @default(now())
+  modificadoEn      DateTime @default(now())
+  ticket            Ticket   @relation(fields: [ticketId], references: [id])
 }
 
 // Tablas de Configuración y Automatización
 model ConfigAgente {
-  id               String   @id @default(uuid())
-  nombre           String
-  descripcion      String?  // Descripción del agente
-  promptBase       String   @db.Text // primera parte del prompt del systemPrompt
-  promptsPorCanal  Json // Segunda parte del prompt que determina el comportamiento por canal
-  umbralConfianza  Float    @default(0.75)
-  actualizadoEn    DateTime @updatedAt
+  id              String   @id @default(uuid())
+  nombre          String
+  descripcion     String? // Descripción del agente
+  promptBase      String   @db.Text // primera parte del prompt del systemPrompt
+  promptsPorCanal Json // Segunda parte del prompt que determina el comportamiento por canal
+  umbralConfianza Float    @default(0.75)
+  actualizadoEn   DateTime @updatedAt
 }
 
 model Plantilla {
-  id                String   @id @default(uuid())
-  nombre            String
-  plantillaAsunto   String?
-  plantillaCuerpo   String   @db.Text
-  creadoEn           DateTime @default(now())
-  modificadoEn       DateTime @default(now())
+  id              String   @id @default(uuid())
+  nombre          String
+  plantillaAsunto String?
+  plantillaCuerpo String   @db.Text
+  creadoEn        DateTime @default(now())
+  modificadoEn    DateTime @default(now())
 }
 
 model Integracion {
-  id           String  @id @default(uuid())
+  id           String   @id @default(uuid())
   nombre       String
   claveApiEnc  String
   endpoint     String?
   urlWebhook   String?
   configJson   Json?
-  activo       Boolean @default(true)
-  creadoEn           DateTime @default(now())
-  modificadoEn       DateTime @default(now())
+  activo       Boolean  @default(true)
+  creadoEn     DateTime @default(now())
+  modificadoEn DateTime @default(now())
 }
 
 model BaseConocimiento {
-  id        String   @id @default(uuid())
-  pregunta  String
+  id            String   @id @default(uuid())
+  pregunta      String
   procedimiento String   @db.Text
-  respuesta String   @db.Text
-  categoria String?
-  creadoEn  DateTime @default(now())
-  modificadoEn       DateTime @default(now())
+  respuesta     String   @db.Text
+  categoria     String?
+  creadoEn      DateTime @default(now())
+  modificadoEn  DateTime @default(now())
 }
 
 // Tablas de Auditoría y Métricas
 model LogEvento {
-  id        String    @id @default(uuid())
-  ticketId  String?
-  usuarioId String?
-  tabla     String  // En el caso de las notiificaciones se guardan aunque la tabla notificación exista, solo son de tipo crear (informativo), el resto si son CUD
-  cud      String   // Ejemplos: CREATE, UPDATE, DELETE
-  payload   Json? // solo se guardan los datos que se modrifican en caso de crear o eliminar se guarda el estado completo
-  creadoEn  DateTime  @default(now())
-  modificadoEn       DateTime @default(now())
-  ticket    Ticket?   @relation(fields: [ticketId], references: [id])
+  id           String   @id @default(uuid())
+  ticketId     String?
+  usuarioId    String?
+  tabla        String // En el caso de las notiificaciones se guardan aunque la tabla notificación exista, solo son de tipo crear (informativo), el resto si son CUD
+  cud          String // Ejemplos: CREATE, UPDATE, DELETE
+  payload      Json? // solo se guardan los datos que se modrifican en caso de crear o eliminar se guarda el estado completo
+  creadoEn     DateTime @default(now())
+  modificadoEn DateTime @default(now())
+  ticket       Ticket?  @relation(fields: [ticketId], references: [id])
 }
 
-view AgregadoDiarioTicket { //Prisma no permite la creación de vistas, hay que crearla manualmente pero igual te dejo el esquema
-  id                    String   @id @default(uuid())
-  fecha                 DateTime @unique
-  // Métricas de volumen
-  ticketsTotales        Int
-  ticketsNuevos         Int
-  ticketsActivos        Int     // tickets abiertos - cerrados
-  
-  // Métricas de resolución
-  conteoResueltos       Int
-  promedioResolucionMin Float
-  ticketsSinAsignar     Int
-  ticketsVencidos       Int     // tickets que exceden SLA
-  
-  // Métricas por canal
-  conteoCorreo          Int
-  conteoWhatsapp        Int
-  conteoFormularioWeb   Int
-  conteoApi             Int
-  
-  // Métricas de calidad
-  conteoWismo           Int     // Where Is My Order
-  conteoDevoluciones    Int
-  conteoEscalados       Int
-  
-  // Métricas de prioridad
-  conteoPrioridadBaja   Int
-  conteoPrioridadMedia  Int
-  conteoPrioridadAlta   Int
-  conteoPrioridadUrgente Int
-  
-  // Métricas de eficiencia
-  promedioPrimerRespuestaMin Float  // tiempo promedio primera respuesta
-  porcentajeAutoResueltos   Float   // tickets resueltos automáticamente
-  conteoReasignaciones      Int     // número de veces que tickets fueron reasignados
-}
+view AgregadoDiarioTicket {
+        fecha                 DateTime  @db.Date // Use fecha as the unique ID for Prisma
+
+        // Metrics de volumen
+        ticketsTotales        Int
+        ticketsNuevos         Int
+        ticketsActivos        Int
+
+        // Metrics de resolución
+        conteoResueltos       Int
+        promedioResolucionMin Float? // Can be null if no tickets were resolved
+        ticketsSinAsignar     Int
+
+        // Métricas por canal
+        conteoCorreo          Int
+        conteoWhatsapp        Int
+        conteoFormularioWeb   Int
+        conteoApi             Int
+
+        // Métricas de calidad
+        conteoWismo           Int     // Where Is My Order
+        conteoDevoluciones    Int
+        conteoEscalados       Int
+
+        // Métricas de prioridad
+        conteoPrioridadBaja   Int
+        conteoPrioridadMedia  Int
+        conteoPrioridadAlta   Int
+        conteoPrioridadUrgente Int
+
+        // Métricas de eficiencia
+        promedioPrimerRespuestaMin Float  // tiempo promedio primera respuesta
+        porcentajeAutoResueltos   Float   // tickets resueltos automáticamente
+        conteoReasignaciones      Int     // número de veces que tickets fueron reasignados
+
+        // Prisma needs to know how this view is mapped in the DB
+        @@map("agregado_diario_ticket") 
+    }
 
 // Definiciones de Enums para robustez del schema
 enum Rol {
@@ -291,21 +293,21 @@ enum EstadoOrden {
 
 enum EstadoTicket {
   // Fase 1: Entrada y Procesamiento IA
-  nuevo               // Recibido, en cola para la IA.
-  ia_sugerido         // IA procesado, en cola para triaje Nivel 1.
-  
+  nuevo // Recibido, en cola para la IA.
+  ia_sugerido // IA procesado, en cola para triaje Nivel 1.
+
   // Fase 2: Interacción y Espera
-  respuesta_cliente   // El cliente ha respondido a un ticket existente. Requiere atención.
-  esperando_cliente   // El agente ha respondido. Esperando al cliente.
-  
+  respuesta_cliente // El cliente ha respondido a un ticket existente. Requiere atención.
+  esperando_cliente // El agente ha respondido. Esperando al cliente.
+
   // Fase 3: Escalado y Resolución Nivel 2
-  escalado_nivel_2    // Triaje decidió escalar. En cola general de especialistas.
+  escalado_nivel_2 // Triaje decidió escalar. En cola general de especialistas.
   en_progreso_nivel_2 // Un especialista Nivel 2 tiene el ticket asignado y lo está trabajando.
 
   // Fase 4: Estados Finales y Excepcionales
-  cerrado             // Ticket resuelto y finalizado.
-  reabierto           // El cliente respondió a un ticket 'cerrado'. Alta prioridad.
-  fusionado           // Ticket duplicado cuyos mensajes se han movido a otro. Es un estado terminal.
+  cerrado // Ticket resuelto y finalizado.
+  reabierto // El cliente respondió a un ticket 'cerrado'. Alta prioridad.
+  fusionado // Ticket duplicado cuyos mensajes se han movido a otro. Es un estado terminal.
 }
 
 enum Prioridad {
@@ -321,6 +323,7 @@ enum Canal {
   formulario_web
   api
 }
+
 ```
 
 ### 4. Flujo de Trabajo Detallado

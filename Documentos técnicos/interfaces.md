@@ -1,4 +1,3 @@
-Saludos, soy Arquitecto y estas son tus interfaces:
 
 ## 1. Interfaces de Usuario (UI)
 
@@ -22,7 +21,7 @@ Para el MVP, se ha decidido implementar **Paneles Fijos por Rol (Role-Based Dash
         *   *Fuente de datos: Query `count` y `groupBy` sobre la tabla `Ticket`.*
     *   **Widget 3: Rendimiento del Equipo:**
         *   Tabla simple mostrando: `Agente`, `Tickets Asignados`, `Tickets Resueltos Hoy`.
-        *   *Fuente de datos: Query `count` y `groupBy` sobre la tabla `Ticket` por `usuarioAsignadoId`.*
+        *   *Fuente de datos: Query `count` y `groupBy` sobre la tabla `Ticket` por `assigneeId`.*
     *   **Widget 4: Distribución de Tickets:**
         *   Gráfico de pastel por `Canal` (Email, Web, etc.).
         *   Gráfico de pastel por `Etiqueta` (WISMO, Devolución, etc.).
@@ -36,13 +35,15 @@ Para el MVP, se ha decidido implementar **Paneles Fijos por Rol (Role-Based Dash
         *   Mis Tickets Resueltos
         *   Mis Tickets Asignados
         *   Mi Tiempo Promedio de Respuesta
-        *   *Fuente de datos: Query filtrada por `usuarioAsignadoId` en la tabla `Ticket`.*
+        *   *Fuente de datos: Query filtrada por `assigneeId` en la tabla `Ticket`.*
     *   **Widget 2: Mis Colas de Trabajo:**
-        *   Tarjetas de acceso rápido con contadores:
-            *   `[X] Tickets para Triaje (Nivel 1)` -> Lleva a la vista de triaje (UI-03).
-            *   `[Y] Mis Tickets Escalados (Nivel 2)` -> Lleva a su cola personal de Nivel 2 (UI-04).
-            *   `[Z] Esperando Respuesta del Cliente`
-        *   *Fuente de datos: Queries `count` específicas.*
+        *   Tarjetas de acceso rápido con contadores, mostrando las colas más importantes:
+            *   `[X] Tickets Reabiertos` (Máxima prioridad)
+            *   `[Y] Respuestas de Clientes`
+            *   `[Z] Tickets para Triaje (Nivel 1)`
+            *   `[A] Mis Tickets Escalados (Nivel 2)`
+            *   `[B] Esperando Respuesta del Cliente`
+        *   *Fuente de datos: Queries `count` específicas por estado (`reabierto`, `respuesta_cliente`, etc.).*
     *   **Widget 3: Actividad Reciente en Mis Tickets:**
         *   Una lista simple de notificaciones: "El cliente de Ticket #123 ha respondido", "Se te ha asignado el Ticket #456".
         *   *Fuente de datos: Tabla `LogEvento` filtrada por tickets asignados al agente.*
@@ -57,7 +58,8 @@ Para el MVP, se ha decidido implementar **Paneles Fijos por Rol (Role-Based Dash
     2.  **Panel de Decisión (Vista Dividida):**
         *   **Izquierda (Contexto):** Historial completo de la conversación, archivos adjuntos visibles y un panel con la información clave de la `Orden` vinculada (estado, tracking, artículos).
         *   **Derecha (Acción):**
-            *   **Editor de Texto:** Pre-cargado con el contenido de `respuestaSugeridaIA`.
+            *   **Banner de Sugerencia de Fusión:** Si `sugerenciaFusionId` existe, mostrar una alerta prominente con acciones para fusionar o ignorar.
+            *   **Editor de Texto:** Pre-cargado con el contenido de `respuestaSugeridaIA` (del último mensaje del cliente).
             *   **Panel de Metadatos de IA:** Muestra `confianzaIA`, `metaDatosIA` (el "porqué" de la IA) y las etiquetas sugeridas.
             *   **Botones de Acción Rápida:**
                 *   `[✅ Aprobar y Enviar]`
@@ -191,7 +193,7 @@ No es necesario que construyan todas estas interfaces con un CRUD completo para 
 3.  **Recomendadas y Postergables:**
     *   **UI-07 (Plantillas), UI-09 (Etiquetas), UI-11 (Órdenes):** El CRUD completo para estos elementos puede ser implementado post-MVP. Para la demo, los datos iniciales pueden ser cargados vía `seed`.
 
-Con estas adiciones, el plano de la aplicación está completo. Hemos cubierto no solo cómo operará el sistema, sino también cómo se administrará y se adaptará. Excelente trabajo inicial, sigamos adelante.
+---
 
 ## 2. Interfaces de Software (API)
 
@@ -219,8 +221,8 @@ Estos endpoints están diseñados para la eficiencia, proporcionando datos pre-a
         { "status": "cerrado", "count": 250 }
       ],
       "teamPerformance": [
-        { "agentId": "uuid-brenda", "agentName": "Brenda", "assigned": 5, "resolvedToday": 12 },
-        { "agentId": "uuid-carlos", "agentName": "Carlos", "assigned": 8, "resolvedToday": 9 }
+        { "assigneeId": "uuid-brenda", "agentName": "Brenda", "assigned": 5, "resolvedToday": 12 },
+        { "assigneeId": "uuid-carlos", "agentName": "Carlos", "assigned": 8, "resolvedToday": 9 }
       ],
       "distribution": {
         "byChannel": [{ "channel": "correo", "count": 450 }, { "channel": "formulario_web", "count": 150 }],
@@ -239,7 +241,9 @@ Estos endpoints están diseñados para la eficiencia, proporcionando datos pre-a
       "myMetricsToday": { "resolved": 12, "assigned": 5, "avgResponseTime": 18 },
       "myQueues": {
         "forTriage": 5,
-        "escalatedToMe": 8,
+        "reopened": 2,
+        "customerReplied": 7,
+        "myEscalated": 8,
         "waitingForCustomer": 15
       },
       "recentActivity": [
@@ -248,6 +252,12 @@ Estos endpoints están diseñados para la eficiencia, proporcionando datos pre-a
       ]
     }
     ```
+
+#### API-02.1: Siguiente Ticket para "Flujo Continuo" (Ref: UI-04)
+*   **Endpoint:** `GET /tickets/next-in-flow`
+*   **Rol Requerido:** `AGENTE`
+*   **Propósito:** Encapsula la lógica de la cola de "Flujo Continuo" (4 Urgentes, 3 Altas, etc.) en el servidor, devolviendo el siguiente ticket más apropiado para el agente que realiza la llamada.
+*   **Respuesta Exitosa (200 OK):** El objeto completo del ticket o `204 No Content` si no hay tickets en la cola.
 
 ### B. Endpoints del Flujo de Tickets
 
@@ -268,14 +278,21 @@ Estos son los endpoints operativos que los agentes usarán constantemente a trav
     *   **Endpoints de Acción:**
         *   `POST /tickets/:id/actions/approve`: **Aprobar y Enviar (Ref: UI-03).**
             *   **Payload:** `{ "editedBody": "Texto opcionalmente modificado por el agente." }`
-            *   **Lógica:** Si `editedBody` no está presente, usa `respuestaSugeridaIA`. Envía el correo. Actualiza el estado del ticket.
+            *   **Lógica:** Si `editedBody` es `undefined`, se usa la `respuestaSugeridaIA` del mensaje y el mensaje saliente se marca como `esAutomatico = true`. Si `editedBody` es una `string` (incluida `""`), se usa su valor y se marca como `esAutomatico = false`. El backend debe validar que el cuerpo no esté vacío antes de enviar.
         *   `POST /tickets/:id/actions/escalate`: **Escalar a Nivel 2 (Ref: UI-03).**
             *   **Payload:** `{ "internalNote": "La IA no entendió el problema real del cliente." }`
         *   `POST /tickets/:id/actions/reassign`: **Reasignar (Ref: UI-03).**
             *   **Payload:** `{ "assigneeId": "uuid-carlos", "internalNote": "Carlos es el experto en este producto." }`
+        *   `POST /tickets/:id/actions/claim`: **Tomar Ticket (Nivel 2).**
+            *   **Payload:** `{}`
+            *   **Lógica:** Cambia el estado del ticket de `escalado_nivel_2` a `en_progreso_nivel_2` y se lo asigna al agente que realiza la llamada.
+        *   `POST /tickets/:targetTicketId/actions/merge`: **Fusionar Ticket.**
+            *   **Payload:** `{ "sourceTicketId": "uuid-del-ticket-a-fusionar" }`
+        *   `POST /tickets/:id/actions/dismiss-merge`: **Ignorar Sugerencia de Fusión.**
+            *   **Payload:** `{}`
 *   **Crear un Mensaje (Responder):** `POST /tickets/:id/messages`
     *   **Propósito:** Para que un agente de Nivel 2 envíe una respuesta manual.
-    *   **Payload:** `{ "body": "Texto de la respuesta.", "isInternalNote": false, "attachments": ["uuid-archivo1"] }`
+    *   **Payload:** `{ "body": "Texto de la respuesta.", "isInternalNote": false, "attachmentIds": ["uuid-archivo1"] }`
 
 ### C. Endpoints de Gestión y Configuración
 
@@ -332,7 +349,16 @@ Endpoints que no requieren autenticación.
 #### API-10: Creación de Ticket desde Formulario Web (Ref: UI-12)
 *   **Endpoint:** `POST /public/tickets`
 *   **Autenticación:** Ninguna (pero con limitación de tasa - rate limiting).
-*   **Payload:** `{ "name": "...", "email": "...", "orderId": "...", "subject": "...", "message": "...", "attachments": [...] }`
+*   **Payload:** `{ "name": "...", "email": "...", "orderId": "...", "subject": "...", "message": "...", "attachmentIds": ["uuid-archivo1"] }`
+
+### F. Endpoints de Utilidades
+
+#### API-11: Subida de Archivos
+*   **Endpoint:** `POST /uploads`
+*   **Autenticación:** Requerida (`AGENTE` o `ADMINISTRADOR`). Para el formulario público, se necesitará un endpoint `POST /public/uploads` con una política de seguridad más estricta.
+*   **Tipo de Contenido:** `multipart/form-data`
+*   **Propósito:** Maneja la subida de un único archivo a Supabase Storage.
+*   **Respuesta Exitosa (201 Created):** `{ "fileId": "uuid-del-archivo-generado" }`. Este ID se usa luego en los payloads de creación de tickets o mensajes (`attachmentIds`).
 
 ---
 
@@ -356,7 +382,8 @@ Estas interfaces definen cómo nuestro sistema se comunica con servicios externo
         *   `attachment-count`: Número de adjuntos.
         *   `attachment-x`: Archivos adjuntos (donde x es un número).
         *   `In-Reply-To`, `References`: Cabeceras clave para identificar si es una respuesta a un hilo existente.
-*   **Lógica Crítica:** El handler de este webhook es el punto de partida del 80% de los tickets. Su robustez es fundamental. Debe identificar hilos, parsear adjuntos y crear/actualizar entidades en la base de datos de forma transaccional.
+        *   `Message-ID`: Identificador único del mensaje, provisto por el servidor de correo.
+*   **Lógica Crítica:** Para garantizar la idempotencia y evitar la creación de mensajes duplicados por reintentos del webhook, el handler extraerá la cabecera `Message-ID` única de Mailgun y la guardará en el campo `fuenteMessageId` del nuevo registro de `Mensaje`. Una violación de la restricción de unicidad en la base de datos indicará que el mensaje ya fue procesado, permitiendo al sistema ignorar el duplicado de forma segura.
 
 #### COM-02: Emails Transaccionales Salientes (Ref: UI-13)
 *   **Tipo:** Salida (Outbound).
@@ -395,3 +422,151 @@ Estas interfaces definen cómo nuestro sistema se comunica con servicios externo
     *   `event: import_job_update`
         *   **Datos:** `{ "jobId": "...", "status": "processing", "progress": 75 }`
         *   **UI Afectada:** UI-05 (para actualizar la barra de progreso).
+    *   `event: ticket_reopened`
+        *   **Datos:** `{ "ticketId": "...", "assigneeId": "..." }`
+        *   **UI Afectada:** UI-02 (Notificación y actualización del contador de la cola "Reabiertos").
+    *   `event: merge_suggestion_available`
+        *   **Datos:** `{ "ticketId": "...", "suggestedMergeWith": "..." }`
+        *   **UI Afectada:** UI-03/04 (Para renderizar el banner de sugerencia de fusión).
+
+---
+
+## 4. Lógica de Negocio Detallada
+
+Esta sección describe la lógica de estado y los flujos de trabajo complejos que gobiernan el comportamiento del sistema.
+
+### 4.1. El Ciclo de Vida del Ticket: Flujo Detallado de Estados
+
+Este es el corazón lógico del sistema. Cada transición está gatillada por un evento específico.
+
+*   **(Evento: Cliente crea comunicación)** → **`nuevo`**
+    *   **Descripción:** Un ticket virgen.
+    *   **Lógica:** Creado por el webhook de email, formulario web, etc.
+    *   **Siguiente Paso:** Entra automáticamente en la cola de procesamiento del worker de IA.
+
+*   **`nuevo`** → **(Acción del Sistema: Worker IA)** → **`ia_sugerido`**
+    *   **Descripción:** La IA ha analizado el ticket y generado una sugerencia.
+    *   **Lógica:** El worker de IA puebla los campos `respuestaSugeridaIA`, etc. en el `Mensaje` original.
+    *   **Siguiente Paso:** Aparece en la cola principal de "Triaje" para los agentes de Nivel 1.
+
+*   **`ia_sugerido`** → **(Acción del Agente: Envía respuesta)** → **`esperando_cliente`**
+    *   **Descripción:** Se ha dado una respuesta y ahora la pelota está en el tejado del cliente.
+    *   **Lógica:** El agente aprueba, edita o escribe una respuesta. Se crea un `Mensaje` saliente.
+    *   **Siguiente Paso:** El ticket sale de las colas activas. Se inicia un temporizador de inactividad (ej. 72 horas).
+
+*   **`ia_sugerido`** → **(Acción del Agente: Escala)** → **`escalado_nivel_2`**
+    *   **Descripción:** El agente de Nivel 1 determina que la sugerencia de la IA es incorrecta o el caso es demasiado complejo.
+    *   **Lógica:** El agente hace clic en "Escalar". El estado del ticket cambia.
+    *   **Siguiente Paso:** El ticket aparece en la cola de Nivel 2 (UI-04) para ser tomado por un especialista.
+
+*   **`escalado_nivel_2`** → **(Acción del Agente N2: Toma el ticket)** → **`en_progreso_nivel_2`**
+    *   **Descripción:** Un especialista ha reclamado el ticket y lo está trabajando activamente.
+    *   **Lógica:** El agente de Nivel 2 usa la acción "Tomar Ticket". El ticket se le asigna.
+    *   **Siguiente Paso:** El ticket permanece en este estado hasta que el especialista envíe una respuesta.
+
+*   **`esperando_cliente`** → **(Evento: Cliente responde)** → **`respuesta_cliente`**
+    *   **Descripción:** El cliente ha continuado la conversación.
+    *   **Lógica:** El webhook de correo detecta una respuesta en un hilo existente (vía `In-Reply-To`).
+    *   **Siguiente Paso:** El ticket aparece en una cola de alta prioridad para el `assigneeId`. **NO pasa por la IA de nuevo.**
+
+*   **`esperando_cliente`** → **(Acción del Sistema: Inactividad)** → **`cerrado`**
+    *   **Descripción:** El problema se considera resuelto por silencio del cliente.
+    *   **Lógica:** Un cron job periódico busca tickets en `esperando_cliente` cuya `modificadoEn` sea mayor al umbral (ej. 72h). Para evitar condiciones de carrera (race conditions), esta transición debe ser atómica, usando una consulta condicional (ej. `UPDATE Ticket SET estado = 'cerrado' WHERE id = ? AND estado = 'esperando_cliente'`).
+    *   **Siguiente Paso:** El ticket se archiva.
+
+*   **`cerrado`** → **(Evento: Cliente responde - "Ticket Zombie")** → **`reabierto`**
+    *   **Descripción:** Una alerta. Un problema que se creía resuelto no lo está.
+    *   **Lógica:** El webhook de correo detecta una respuesta en un hilo de un ticket `cerrado`.
+    *   **Siguiente Paso:** El ticket aparece en una cola especial de "Tickets Reabiertos" de alta visibilidad.
+
+### 4.2. La Lógica de Fusión de Tickets: Manejo de Hilos Rotos
+
+Este enfoque es de **asistencia inteligente**, no de automatización arriesgada.
+
+#### Fase 1: El Algoritmo de Ingesta de Mensajes
+Cuando el backend recibe un nuevo mensaje (ej. vía un webhook de email), ejecuta este flujo:
+1.  **¿Es una Respuesta Directa?**
+    *   Se analizan las cabeceras `In-Reply-To` / `References`.
+    *   **SÍ:** Se encuentra el `ticketId` asociado. Se crea el `Mensaje` dentro de ese ticket y se actualiza su estado. Proceso finalizado.
+    *   **NO:** Continuar.
+2.  **¿Asunto Contiene un ID de Ticket (`#[0-9]+`)?**
+    *   Se usa una expresión regular para buscar este patrón.
+    *   **SÍ:** Se extrae el `ticketId`. Se crea el `Mensaje` y se actualiza el estado. Proceso finalizado.
+    *   **NO:** Se asume que es un hilo nuevo. Se crea un `Ticket` con estado `nuevo` y se asocia el primer `Mensaje`. Continuar.
+3.  **Disparar Job de Sugerencia de Fusión (Asíncrono)**
+    *   Inmediatamente después de crear el nuevo ticket, se encola un job en segundo plano.
+    *   El job ejecuta la siguiente heurística: *"Para este `clienteId`, busca otros tickets actualizados en las últimas 72 horas, cuyo estado NO sea `fusionado`."*
+    *   **Si encuentra EXACTAMENTE 1 otro ticket:** Actualiza el ticket recién creado estableciendo su campo `sugerenciaFusionId` al ID del ticket encontrado y dispara el evento SSE `merge_suggestion_available`.
+    *   **Si encuentra 0 o más de 1:** No hace nada.
+
+#### Fase 2: La Experiencia del Agente (UI/UX y API)
+1.  **Detección en el Frontend:**
+    *   Al cargar un ticket (o al recibir el evento SSE), la app comprueba si `sugerenciaFusionId` tiene un valor.
+    *   Si lo tiene, renderiza un componente de alerta:
+        > 💡 **Sugerencia de Fusión:** Este ticket podría ser una continuación del **[Ticket #{sugerenciaFusionId}]**.
+        > `[Ver Ticket Original]` `[Fusionar en Ticket Original]` `[Ignorar Sugerencia]`
+2.  **Las Acciones del Agente y sus APIs:**
+    *   **Botón `[Fusionar en Ticket Original]`:**
+        *   **API Call:** `POST /api/tickets/{sugerenciaFusionId}/actions/merge` con `{ "sourceTicketId": "ID_DEL_TICKET_ACTUAL" }`
+        *   **Lógica del Backend:**
+            1.  Inicia una transacción de base de datos.
+            2.  Reasigna todos los `Mensajes` del `sourceTicketId` al `targetTicketId`.
+            3.  Cambia el estado del `sourceTicketId` a `fusionado`.
+            4.  Actualiza el estado del `targetTicketId` (a `reabierto` o `respuesta_cliente` según corresponda).
+            5.  **Crea un `LogEvento`** en el ticket objetivo para auditar la fusión.
+            6.  Finaliza la transacción.
+        *   **Resultado en Frontend:** Redirige al agente al ticket original, ahora actualizado.
+    *   **Botón `[Ignorar Sugerencia]`:**
+        *   **API Call:** `POST /api/tickets/{ID_DEL_TICKET_ACTUAL}/actions/dismiss-merge`
+        *   **Lógica del Backend:** Pone `sugerenciaFusionId = NULL` en el ticket.
+        *   **Resultado en Frontend:** El banner de alerta desaparece.
+### 4.3. Caso de Uso Crítico: Gestión de Hilos Rotos y Tickets Reabiertos (Ejemplo End-to-End)
+
+Este escenario práctico demuestra la resiliencia del sistema frente a un comportamiento común del cliente, validando la interacción entre el modelo de datos, la lógica de negocio, la API y la interfaz de usuario.
+
+**Escenario:** Un cliente continúa una conversación creando un nuevo correo en lugar de responder al hilo existente.
+
+1.  **Lunes, 10:00 AM:** Un cliente (`id: cli_abc`) envía un email con el asunto "Mi app no funciona". El sistema crea el **Ticket #123** con estado `nuevo`.
+2.  **10:01 AM:** El worker de IA procesa el ticket, que pasa a estado `ia_sugerido`. La sugerencia de la IA se guarda en el primer mensaje del ticket.
+3.  **10:05 AM:** La Agente Ana (Nivel 1) revisa la sugerencia, la edita y envía una respuesta solicitando más detalles. El ticket transita a estado `esperando_cliente`.
+4.  **Jueves, 11:00 AM:** Transcurren más de 72 horas sin respuesta del cliente. Un cron job periódico detecta la inactividad y cambia automáticamente el estado del **Ticket #123** a `cerrado`.
+5.  **Viernes, 9:00 AM:** El cliente, en lugar de responder al correo original, crea un **nuevo email** con el asunto "Sigue sin funcionar!!".
+
+#### El Sistema en Acción: Lógica de Detección y Fusión
+
+6.  **Recepción y Creación:**
+    *   El webhook de Mailgun recibe el nuevo mensaje. El análisis de cabeceras no encuentra un `In-Reply-To` y el asunto no contiene el patrón `#[123]`.
+    *   El sistema concluye que es un hilo nuevo y crea el **Ticket #124** para el cliente `cli_abc` en estado `nuevo`.
+7.  **Job de Sugerencia Asíncrona:**
+    *   Inmediatamente tras la creación del Ticket #124, se encola un job con la tarea: `suggestMerge('ticket_124', 'cli_abc')`.
+    *   El job ejecuta la **heurística de fusión mejorada**: "Para el cliente `cli_abc`, buscar tickets actualizados en los últimos 7 días, excluyendo aquellos con estado `fusionado`".
+    *   La búsqueda encuentra un único resultado: el **Ticket #123** (estado `cerrado`).
+    *   El job actualiza el **Ticket #124** estableciendo su campo `sugerenciaFusionId = 'ticket_123'` y emite un evento `merge_suggestion_available` por SSE.
+8.  **Intervención Humana Guiada (Triaje Nivel 1):**
+    *   **9:15 AM:** El Agente Bruno, que está de turno, ve el **Ticket #124** aparecer en su cola de triaje (`ia_sugerido`).
+    *   En la parte superior de la vista del ticket, la UI renderiza el banner de alerta:
+        > 💡 **Sugerencia de Fusión:** Este ticket podría ser una continuación del **[Ticket #123]**. `[Ver Ticket Original]` `[Fusionar]` `[Ignorar]`
+9.  **Ejecución de la Fusión:**
+    *   Bruno hace clic en el botón `[Fusionar]`.
+    *   El frontend ejecuta la llamada a la API: `POST /api/v1/tickets/123/actions/merge` con el payload `{ "sourceTicketId": "124" }`.
+10. **Resultado y Consolidación del Contexto:**
+    *   El backend ejecuta la lógica de fusión en una transacción:
+        1.  Mueve los mensajes y archivos del Ticket #124 al Ticket #123.
+        2.  Cambia el estado del Ticket #124 a `fusionado`.
+        3.  Cambia el estado del Ticket #123 de `cerrado` a `reabierto`.
+        4.  Asegura que la asignación del Ticket #123 se mantenga con la dueña original (Ana).
+    *   Bruno es redirigido automáticamente a la vista del **Ticket #123**, que ahora:
+        *   Contiene la conversación completa y cronológica.
+        *   Aparece en la cola de "Reabiertos", señalando alta prioridad.
+        *   Permanece asignado a la Agente Ana, que tiene todo el contexto para continuar.
+
+**Conclusión del Caso de Uso:** El sistema ha gestionado con éxito un hilo roto y un ticket zombie, evitando la creación de información duplicada y proveyendo todo el contexto histórico al agente correcto de forma eficiente.
+
+#### Impacto en la Arquitectura y el Plan de Pruebas
+
+Este caso de uso valida directamente la necesidad y el diseño de:
+
+*   **Schema de BD:** Los campos `sugerenciaFusionId` en `Ticket` y los estados `fusionado` y `reabierto` en `EstadoTicket` son indispensables.
+*   **API:** El endpoint `POST /.../actions/merge` es la implementación técnica de esta lógica de negocio.
+*   **UI:** El banner de sugerencia en la **UI-03** es la pieza clave que permite la intervención humana informada.
+*   **Testing:** Este flujo exacto debe ser replicado en una prueba End-to-End (`Test E: Fusión de Hilos Rotos`) para garantizar su correcto funcionamiento de forma continua.
